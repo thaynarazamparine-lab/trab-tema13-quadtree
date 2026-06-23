@@ -1,33 +1,23 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c11 -Iinclude
-LDFLAGS = -pthread -lm
+LIBS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
-SRC_DIR = src
-INC_DIR = include
-OBJ_DIR = obj
-TEST_DIR = tests
+SRC = src/quadtree.c
+OBJ = obj/quadtree.o
 
-SRC = $(wildcard $(SRC_DIR)/*.c)
-OBJ = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRC))
+all: test_runner sim_visual
 
-TARGET = sim_colisoes
-
-all: $(TARGET)
-
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
+obj/%.o: src/%.c
+	mkdir -p obj
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-test:
-	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) $(TEST_DIR)/test_fundacao.c -o test_runner
+test: tests/test_fundacao.c $(OBJ)
+	$(CC) $(CFLAGS) tests/test_fundacao.c $(OBJ) -o test_runner
 	./test_runner
 
-stress: $(TARGET)
-	./$(TARGET) --stress
+visual: src/main_visual.c $(OBJ)
+	$(CC) $(CFLAGS) src/main_visual.c $(OBJ) $(LIBS) -o sim_visual
+	./sim_visual
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET) test_runner
+	rm -rf obj test_runner sim_visual
