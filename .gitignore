@@ -1,5 +1,9 @@
 test_runner
 stress_runner
+parallel_runner
+parallel_test_runner
+imbalance_runner
 sim_colisoes
 sim_visual
 obj/
+trab-tema13-quadtree/
