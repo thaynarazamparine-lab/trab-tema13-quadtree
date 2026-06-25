@@ -16,32 +16,43 @@ obj/%.o: src/%.c
 	mkdir -p obj
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# ── Testes unitários originais ─────────────────────────────
-test: tests/test_fundacao.c $(OBJ_QT)
+# ── Regras explícitas dos binários (necessário para make all) ──
+test_runner: tests/test_fundacao.c $(OBJ_QT)
 	$(CC) $(CFLAGS) tests/test_fundacao.c $(OBJ_QT) -lm -o test_runner
+
+stress_runner: tests/test_stress.c $(OBJ_QT)
+	$(CC) $(CFLAGS) tests/test_stress.c $(OBJ_QT) -lm -o stress_runner
+
+parallel_runner: src/sim_parallel.c $(OBJ_PAR)
+	$(CC) $(CFLAGS) src/sim_parallel.c $(OBJ_PAR) -lm -lpthread -o parallel_runner
+
+imbalance_runner: src/sim_parallel.c $(OBJ_PAR)
+	$(CC) $(CFLAGS) src/sim_parallel.c $(OBJ_PAR) -lm -lpthread -o imbalance_runner
+
+test_conc: tests/test_concorrente.c $(OBJ_QT)
+	$(CC) $(CFLAGS) tests/test_concorrente.c $(OBJ_QT) -lpthread -o test_conc
+
+# ── Alvos de execução ──────────────────────────────────────
+test: test_runner
 	./test_runner
 
-# ── Testes de stress ───────────────────────────────────────
-stress: tests/test_stress.c $(OBJ_QT)
-	$(CC) $(CFLAGS) tests/test_stress.c $(OBJ_QT) -lm -o stress_runner
+stress: stress_runner
 	./stress_runner
 
-# ── Testes paralelos (transferência, métricas, CSV) ────────
 test_parallel: tests/test_parallel.c $(OBJ_PAR)
 	$(CC) $(CFLAGS) tests/test_parallel.c $(OBJ_PAR) -lm -lpthread -o parallel_test_runner
 	./parallel_test_runner
 
-# ── Simulação paralela — cenário normal ───────────────────
-parallel: src/sim_parallel.c $(OBJ_PAR)
-	$(CC) $(CFLAGS) src/sim_parallel.c $(OBJ_PAR) -lm -lpthread -o parallel_runner
+parallel: parallel_runner
 	./parallel_runner
 
-# ── Simulação paralela — cenário de desbalanceamento ──────
-imbalance_test: src/sim_parallel.c $(OBJ_PAR)
-	$(CC) $(CFLAGS) src/sim_parallel.c $(OBJ_PAR) -lm -lpthread -o imbalance_runner
+imbalance_test: imbalance_runner
 	./imbalance_runner imbalance
 
-# ── Gráficos (requer Python 3 + matplotlib + pandas) ──────
+conc: test_conc
+	./test_conc
+
+# ── Gráficos ───────────────────────────────────────────────
 graphs:
 	python3 scripts/plot_metrics.py both
 
@@ -50,21 +61,14 @@ visual: src/main_visual.c $(OBJ_QT)
 	$(CC) $(CFLAGS) src/main_visual.c $(OBJ_QT) $(LIBS) -o sim_visual
 	./sim_visual
 
-# ── Testes de concorrência (Rafael Zoppé) ─────────────────
-conc: test_conc
-	./test_conc
-
-test_conc: tests/test_concorrente.c $(OBJ_QT)
-	$(CC) $(CFLAGS) tests/test_concorrente.c $(OBJ_QT) -lpthread -o test_conc
-
-# ── ThreadSanitizer — prova ausência de data races ────────
+# ── ThreadSanitizer — prova ausência de data races ─────────
 tsan: tests/test_concorrente.c src/quadtree.c
 	$(CC) $(CFLAGS) -fsanitize=thread -g \
 		tests/test_concorrente.c src/quadtree.c \
 		-lpthread -o test_conc_tsan
 	./test_conc_tsan
 
-# ── AddressSanitizer + UBSan — sem vazamentos nem UB ──────
+# ── AddressSanitizer + UBSan — sem vazamentos nem UB ───────
 asan: tests/test_fundacao.c tests/test_concorrente.c src/quadtree.c
 	$(CC) $(CFLAGS) -fsanitize=address,undefined -g \
 		tests/test_fundacao.c src/quadtree.c \
