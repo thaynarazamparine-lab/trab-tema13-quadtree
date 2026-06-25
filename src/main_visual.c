@@ -7,15 +7,42 @@
 #define SCREEN_HEIGHT 600
 #define NUM_PARTICLES 60
 
-void draw_quadtree_bounds(QuadTreeNode* node) {
+void DrawHeart(int x, int y, float size, Color color) {
+    float r = size * 0.5f;
+    DrawCircle(x - (int)r, y - (int)r, r, color);
+    DrawCircle(x + (int)r, y - (int)r, r, color);
+    DrawTriangle((Vector2){x - size, y - r + 1.0f}, 
+                 (Vector2){x, y + size}, 
+                 (Vector2){x + size, y - r + 1.0f}, color);
+}
+
+void draw_quadtree_bounds(QuadTreeNode* node, bool* is_colliding) {
     if (!node) return;
-    DrawRectangleLines((int)node->bounds.x, (int)node->bounds.y, 
-                       (int)node->bounds.width, (int)node->bounds.height, DARKGRAY);
+    
+    bool has_collision = false;
+    for (int i = 0; i < node->count; i++) {
+        if (is_colliding[node->particles[i]->id]) {
+            has_collision = true;
+            break;
+        }
+    }
+
+    if (has_collision) {
+        // Fundo branco com apenas 5% de opacidade e borda levemente mais visível
+        DrawRectangle((int)node->bounds.x, (int)node->bounds.y, 
+                      (int)node->bounds.width, (int)node->bounds.height, Fade(WHITE, 0.05f));
+        DrawRectangleLines((int)node->bounds.x, (int)node->bounds.y, 
+                           (int)node->bounds.width, (int)node->bounds.height, Fade(WHITE, 0.3f));
+    } else {
+        DrawRectangleLines((int)node->bounds.x, (int)node->bounds.y, 
+                           (int)node->bounds.width, (int)node->bounds.height, DARKGRAY);
+    }
+
     if (node->is_divided) {
-        draw_quadtree_bounds(node->nw);
-        draw_quadtree_bounds(node->ne);
-        draw_quadtree_bounds(node->sw);
-        draw_quadtree_bounds(node->se);
+        draw_quadtree_bounds(node->nw, is_colliding);
+        draw_quadtree_bounds(node->ne, is_colliding);
+        draw_quadtree_bounds(node->sw, is_colliding);
+        draw_quadtree_bounds(node->se, is_colliding);
     }
 }
 
@@ -32,7 +59,7 @@ int main() {
         particles[i].id = i;
         particles[i].position.x = (double)(rand() % (SCREEN_WIDTH - 40) + 20);
         particles[i].position.y = (double)(rand() % (SCREEN_HEIGHT - 40) + 20);
-        particles[i].radius = 4.0;
+        particles[i].radius = 6.0; 
         vx[i] = (double)((rand() % 200 - 100) / 50.0);
         vy[i] = (double)((rand() % 200 - 100) / 50.0);
     }
@@ -63,12 +90,13 @@ int main() {
 
         BeginDrawing();
         ClearBackground(BLACK);
-        draw_quadtree_bounds(root);
+        
+        draw_quadtree_bounds(root, is_colliding);
 
         for (int i = 0; i < NUM_PARTICLES; i++) {
-            Color c = is_colliding[i] ? RED : MAROON;
-            DrawCircle((int)particles[i].position.x, (int)particles[i].position.y, 
-                       (float)particles[i].radius, c);
+            Color c = is_colliding[i] ? PINK : BLUE;
+            DrawHeart((int)particles[i].position.x, (int)particles[i].position.y, 
+                      (float)particles[i].radius, c);
         }
 
         DrawFPS(10, 10);
