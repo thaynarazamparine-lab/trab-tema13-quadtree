@@ -19,10 +19,19 @@ typedef struct QuadTreeNode {
     struct QuadTreeNode *nw, *ne, *sw, *se;
 } QuadTreeNode;
 
+
+QuadTreeNode* create_node(AABB bounds);
+bool insert_particle(QuadTreeNode* node, Particle* p);
+bool remove_particle(QuadTreeNode* node, Particle* p);
+void query_region(QuadTreeNode* node, AABB range, Particle** found, int* found_count);
+void check_collisions(QuadTreeNode* root, Particle* p, Particle** collided, int* collision_count);
+void free_tree(QuadTreeNode* node);
+
 /* --- Criação e destruição --- */
 QuadTreeNode *create_node(AABB bounds);
 void          free_tree(QuadTreeNode *node);
 void          clear_tree(QuadTreeNode *node);   /* zera sem liberar o nó raiz */
+
 
 /* --- Inserção --- */
 bool insert_particle(QuadTreeNode *node, Particle *p);
