@@ -9,7 +9,7 @@ OBJ_QT = obj/quadtree.o
 OBJ_PAR = obj/quadtree.o obj/metrics.o obj/transfer.o
 
 # ── Alvo padrão ────────────────────────────────────────────
-all: test_runner stress_runner parallel_runner imbalance_runner
+all: test_runner stress_runner parallel_runner imbalance_runner test_conc
 
 # ── Compilação dos objetos ─────────────────────────────────
 obj/%.o: src/%.c
@@ -50,10 +50,34 @@ visual: src/main_visual.c $(OBJ_QT)
 	$(CC) $(CFLAGS) src/main_visual.c $(OBJ_QT) $(LIBS) -o sim_visual
 	./sim_visual
 
+# ── Testes de concorrência (Rafael Zoppé) ─────────────────
+conc: test_conc
+	./test_conc
+
+test_conc: tests/test_concorrente.c $(OBJ_QT)
+	$(CC) $(CFLAGS) tests/test_concorrente.c $(OBJ_QT) -lpthread -o test_conc
+
+# ── ThreadSanitizer — prova ausência de data races ────────
+tsan: tests/test_concorrente.c src/quadtree.c
+	$(CC) $(CFLAGS) -fsanitize=thread -g \
+		tests/test_concorrente.c src/quadtree.c \
+		-lpthread -o test_conc_tsan
+	./test_conc_tsan
+
+# ── AddressSanitizer + UBSan — sem vazamentos nem UB ──────
+asan: tests/test_fundacao.c tests/test_concorrente.c src/quadtree.c
+	$(CC) $(CFLAGS) -fsanitize=address,undefined -g \
+		tests/test_fundacao.c src/quadtree.c \
+		-lm -o test_fund_asan && ./test_fund_asan
+	$(CC) $(CFLAGS) -fsanitize=address,undefined -g \
+		tests/test_concorrente.c src/quadtree.c \
+		-lpthread -o test_conc_asan && ./test_conc_asan
+
 # ── Limpeza ────────────────────────────────────────────────
 clean:
 	rm -rf obj test_runner stress_runner parallel_runner \
-	       parallel_test_runner imbalance_runner sim_visual
+	       parallel_test_runner imbalance_runner sim_visual \
+	       test_conc test_conc_tsan test_fund_asan test_conc_asan
 
 clean_results:
 	rm -rf results/
