@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <float.h>
 #include "../include/types.h"
 #include "../include/quadtree.h"
 
@@ -384,6 +385,129 @@ static void test_query_range_subdivided(void) {
 }
 
 /* =========================================================
+ * Testes de vizinhos: busca por raio e vizinho mais próximo
+ * ========================================================= */
+
+static double dist2(double ax, double ay, double bx, double by) {
+    double dx = ax - bx;
+    double dy = ay - by;
+    return dx * dx + dy * dy;
+}
+
+/* query_radius básico: distingue quem está dentro e fora do círculo */
+static void test_query_radius_basic(void) {
+    QuadTreeNode *root = make_root();
+    Particle a = make_particle(1, 50.0, 50.0); /* centro     -> dentro */
+    Particle b = make_particle(2, 55.0, 50.0); /* dist 5     -> dentro de r=10 */
+    Particle c = make_particle(3, 50.0, 90.0); /* dist 40    -> fora */
+    insert_particle(root, &a);
+    insert_particle(root, &b);
+    insert_particle(root, &c);
+
+    Particle *res[8];
+    int found = query_radius(root, 50.0, 50.0, 10.0, res, 8);
+    assert(found == 2);
+    free_tree(root);
+    printf("  [OK] test_query_radius_basic\n");
+}
+
+/* Prova que a busca é CIRCULAR, não quadrada: um ponto que cairia dentro de
+ * um quadrado de busca, mas está fora do círculo de raio r, não é retornado.
+ * (90,90) dista sqrt(40^2+40^2) ~= 56.6 do centro (50,50), logo > 50. */
+static void test_query_radius_is_circular(void) {
+    QuadTreeNode *root = make_root();
+    Particle corner = make_particle(1, 90.0, 90.0); /* fora do círculo r=50 */
+    Particle center = make_particle(2, 50.0, 50.0); /* dentro */
+    insert_particle(root, &corner);
+    insert_particle(root, &center);
+
+    Particle *res[8];
+    int found = query_radius(root, 50.0, 50.0, 50.0, res, 8);
+    assert(found == 1);
+    assert(res[0]->id == 2);
+    free_tree(root);
+    printf("  [OK] test_query_radius_is_circular\n");
+}
+
+static void test_find_nearest_basic(void) {
+    QuadTreeNode *root = make_root();
+    Particle a = make_particle(1, 10.0, 10.0);
+    Particle b = make_particle(2, 90.0, 90.0);
+    Particle c = make_particle(3, 52.0, 52.0); /* o mais perto de (50,50) */
+    insert_particle(root, &a);
+    insert_particle(root, &b);
+    insert_particle(root, &c);
+
+    Particle *n = find_nearest(root, 50.0, 50.0);
+    assert(n != NULL);
+    assert(n->id == 3);
+    free_tree(root);
+    printf("  [OK] test_find_nearest_basic\n");
+}
+
+static void test_find_nearest_empty(void) {
+    QuadTreeNode *root = make_root();
+    assert(find_nearest(root, 50.0, 50.0) == NULL);
+    free_tree(root);
+    printf("  [OK] test_find_nearest_empty\n");
+}
+
+/* Cross-check aleatório: a árvore precisa concordar com a força bruta O(n^2).
+ * Semente fixa => teste reproduzível. Este é o teste que dá segurança de
+ * corretude e é defensável: "verifico contra a verdade ingênua". */
+static void test_neighbors_vs_bruteforce(void) {
+    srand(12345);
+    const int    N = 300;
+    const double W = 100.0;
+
+    AABB bounds = {0.0, 0.0, W, W};
+    QuadTreeNode *root = create_node(bounds);
+
+    Particle *ps = (Particle *)malloc(N * sizeof(Particle));
+    assert(ps != NULL);
+    for (int i = 0; i < N; i++) {
+        ps[i] = make_particle(i,
+                              (double)rand() / RAND_MAX * W,
+                              (double)rand() / RAND_MAX * W);
+        assert(insert_particle(root, &ps[i]));
+    }
+
+    Particle *res[300];
+    for (int q = 0; q < 50; q++) {
+        double qx = (double)rand() / RAND_MAX * W;
+        double qy = (double)rand() / RAND_MAX * W;
+        double r  = 5.0 + (double)rand() / RAND_MAX * 30.0;
+        double r2 = r * r;
+
+        /* query_radius vs força bruta */
+        int naive = 0;
+        for (int i = 0; i < N; i++)
+            if (dist2(ps[i].position.x, ps[i].position.y, qx, qy) <= r2)
+                naive++;
+
+        int found = query_radius(root, qx, qy, r, res, N);
+        assert(found == naive);
+        for (int i = 0; i < found; i++)
+            assert(dist2(res[i]->position.x, res[i]->position.y, qx, qy) <= r2);
+
+        /* find_nearest vs força bruta (compara distância, tolerante a empates) */
+        double best_naive = DBL_MAX;
+        for (int i = 0; i < N; i++) {
+            double d2 = dist2(ps[i].position.x, ps[i].position.y, qx, qy);
+            if (d2 < best_naive) best_naive = d2;
+        }
+        Particle *nn = find_nearest(root, qx, qy);
+        assert(nn != NULL);
+        double d2_tree = dist2(nn->position.x, nn->position.y, qx, qy);
+        assert(d2_tree == best_naive);
+    }
+
+    free(ps);
+    free_tree(root);
+    printf("  [OK] test_neighbors_vs_bruteforce (N=%d, 50 consultas)\n", N);
+}
+
+/* =========================================================
  * Testes de auxiliares geométricos
  * ========================================================= */
 
@@ -448,6 +572,13 @@ int main(void) {
     printf("\n=== Testes de Consulta Espacial ===\n");
     test_query_range_basic();
     test_query_range_subdivided();
+
+    printf("\n=== Testes de Vizinhos (raio e mais proximo) ===\n");
+    test_query_radius_basic();
+    test_query_radius_is_circular();
+    test_find_nearest_basic();
+    test_find_nearest_empty();
+    test_neighbors_vs_bruteforce();
 
     printf("\n=== Testes de Auxiliares Geometricos ===\n");
     test_aabb_contains();

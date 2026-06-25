@@ -1,6 +1,7 @@
 #include "../include/quadtree.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <float.h>
 
 /* =========================================================
  * Auxiliares geométricos
@@ -18,6 +19,23 @@ bool aabb_intersects(AABB a, AABB b) {
              b.x + b.width  < a.x ||
              b.y > a.y + a.height ||
              b.y + b.height < a.y);
+}
+
+/* Distância ao quadrado do ponto (px,py) ao retângulo 'box'.
+ * Para cada eixo, mede o quanto o ponto está "fora" da faixa do retângulo;
+ * se está dentro da faixa, a contribuição daquele eixo é zero. Logo:
+ *   - ponto dentro do retângulo  -> retorna 0
+ *   - ponto fora                 -> retorna o quadrado da distância até a
+ *                                   borda/canto mais próximo
+ * Sem sqrt: comparamos sempre distâncias ao quadrado, o que é exato e barato. */
+double dist2_point_aabb(AABB box, double px, double py) {
+    double dx = 0.0;
+    double dy = 0.0;
+    if (px < box.x)                   dx = box.x - px;
+    else if (px > box.x + box.width)  dx = px - (box.x + box.width);
+    if (py < box.y)                   dy = box.y - py;
+    else if (py > box.y + box.height) dy = py - (box.y + box.height);
+    return dx * dx + dy * dy;
 }
 
 /* =========================================================
@@ -251,4 +269,101 @@ int query_range(QuadTreeNode *node, AABB range,
     found += query_range(node->sw, range, results + found, max_results - found);
     found += query_range(node->se, range, results + found, max_results - found);
     return found;
+}
+
+/* =========================================================
+ * Consulta por raio (vizinhos dentro de um círculo)
+ * ========================================================= */
+
+int query_radius(QuadTreeNode *node, double cx, double cy, double radius,
+                 Particle **results, int max_results) {
+    if (!node || max_results <= 0) return 0;
+
+    double r2 = radius * radius;
+
+    /* PODA: se o ponto mais próximo do retângulo deste nó já está mais longe
+     * que o raio, nenhuma partícula da subárvore inteira pode entrar no
+     * círculo. Descartamos o nó e todos os seus descendentes de uma vez. */
+    if (dist2_point_aabb(node->bounds, cx, cy) > r2) return 0;
+
+    int found = 0;
+
+    if (!node->is_divided) {
+        for (int i = 0; i < node->count && found < max_results; i++) {
+            Particle *p = node->particles[i];
+            double dx = p->position.x - cx;
+            double dy = p->position.y - cy;
+            if (dx * dx + dy * dy <= r2)
+                results[found++] = p;
+        }
+        return found;
+    }
+
+    found += query_radius(node->nw, cx, cy, radius, results + found, max_results - found);
+    found += query_radius(node->ne, cx, cy, radius, results + found, max_results - found);
+    found += query_radius(node->sw, cx, cy, radius, results + found, max_results - found);
+    found += query_radius(node->se, cx, cy, radius, results + found, max_results - found);
+    return found;
+}
+
+/* =========================================================
+ * Vizinho mais próximo (branch-and-bound)
+ * ========================================================= */
+
+/* Percorre a árvore mantendo o melhor candidato encontrado até agora
+ * (*best, com distância ao quadrado *best_d2). A poda usa dist2_point_aabb:
+ * um nó cujo retângulo está mais longe que o melhor atual não pode conter
+ * nada melhor, então é ignorado. Visitar primeiro o filho mais próximo faz
+ * o "melhor" ficar pequeno cedo, o que poda mais os filhos seguintes. */
+static void nearest_recursive(QuadTreeNode *node, double px, double py,
+                              Particle **best, double *best_d2) {
+    if (!node) return;
+
+    /* Se já temos um candidato e este nó não pode superá-lo, poda. */
+    if (*best != NULL && dist2_point_aabb(node->bounds, px, py) >= *best_d2)
+        return;
+
+    if (!node->is_divided) {
+        for (int i = 0; i < node->count; i++) {
+            Particle *p = node->particles[i];
+            double dx = p->position.x - px;
+            double dy = p->position.y - py;
+            double d2 = dx * dx + dy * dy;
+            if (*best == NULL || d2 < *best_d2) {
+                *best_d2 = d2;
+                *best    = p;
+            }
+        }
+        return;
+    }
+
+    /* Ordena os quatro filhos pela distância do retângulo ao ponto, do mais
+     * perto ao mais longe (insertion sort em 4 elementos). */
+    QuadTreeNode *child[4] = { node->nw, node->ne, node->sw, node->se };
+    double        cd[4];
+    for (int i = 0; i < 4; i++)
+        cd[i] = child[i] ? dist2_point_aabb(child[i]->bounds, px, py) : DBL_MAX;
+
+    for (int i = 1; i < 4; i++) {
+        QuadTreeNode *cn = child[i];
+        double        dd = cd[i];
+        int j = i - 1;
+        while (j >= 0 && cd[j] > dd) {
+            child[j + 1] = child[j];
+            cd[j + 1]    = cd[j];
+            j--;
+        }
+        child[j + 1] = cn;
+        cd[j + 1]    = dd;
+    }
+
+    for (int i = 0; i < 4; i++)
+        nearest_recursive(child[i], px, py, best, best_d2);
+}
+
+Particle *find_nearest(QuadTreeNode *node, double px, double py) {
+    Particle *best    = NULL;
+    double    best_d2 = 0.0;   /* só é lido depois que best != NULL */
+    nearest_recursive(node, px, py, &best, &best_d2);
+    return best;
 }
