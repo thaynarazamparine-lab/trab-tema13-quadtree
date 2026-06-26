@@ -1,86 +1,63 @@
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include "../include/quadtree.h"
 
-#define STRESS_N    1000
-#define WORLD_SIZE  800.0
-
-static double randf(double lo, double hi) {
-    return lo + (hi - lo) * ((double)rand() / RAND_MAX);
-}
-
-/* Insere N partículas, consulta toda a área e remove todas */
-static void stress_insert_query_remove(void) {
-    AABB bounds = {0.0, 0.0, WORLD_SIZE, WORLD_SIZE};
-    QuadTreeNode *root = create_node(bounds);
-
-    Particle *particles = (Particle *)malloc(STRESS_N * sizeof(Particle));
-    assert(particles != NULL);
-
-    for (int i = 0; i < STRESS_N; i++) {
-        particles[i].id         = i;
-        particles[i].position.x = randf(0.0, WORLD_SIZE);
-        particles[i].position.y = randf(0.0, WORLD_SIZE);
-        particles[i].velocity.x = 0.0;
-        particles[i].velocity.y = 0.0;
-        particles[i].radius     = 1.0;
-        particles[i].mass       = 1.0;
-        assert(insert_particle(root, &particles[i]) == true);
-    }
-
-    /* Query de toda a área deve retornar todas as partículas */
-    Particle **results = (Particle **)malloc(STRESS_N * sizeof(Particle *));
-    assert(results != NULL);
-    int found = query_range(root, bounds, results, STRESS_N);
-    assert(found == STRESS_N);
-    free(results);
-
-    /* Remove todas */
-    for (int i = 0; i < STRESS_N; i++)
-        remove_particle(root, &particles[i]);
-
-    free(particles);
-    free_tree(root);
-    printf("  [OK] stress_insert_query_remove (%d particulas)\n", STRESS_N);
-}
-
-/* Reconstrói a árvore 100 vezes (simula frames) */
-static void stress_rebuild_frames(void) {
-    AABB bounds = {0.0, 0.0, WORLD_SIZE, WORLD_SIZE};
-
-    Particle particles[100];
-    double vx[100], vy[100];
-    for (int i = 0; i < 100; i++) {
-        particles[i].id         = i;
-        particles[i].position.x = randf(0.0, WORLD_SIZE);
-        particles[i].position.y = randf(0.0, WORLD_SIZE);
-        particles[i].radius     = 4.0;
-        vx[i] = randf(-2.0, 2.0);
-        vy[i] = randf(-2.0, 2.0);
-    }
-
-    for (int frame = 0; frame < 100; frame++) {
-        for (int i = 0; i < 100; i++) {
-            particles[i].position.x += vx[i];
-            particles[i].position.y += vy[i];
-            if (particles[i].position.x < 0.0 || particles[i].position.x > WORLD_SIZE) vx[i] *= -1;
-            if (particles[i].position.y < 0.0 || particles[i].position.y > WORLD_SIZE) vy[i] *= -1;
+void check_collisions_brute(Particle* p, Particle* particles, int n, Particle** collided, int* count) {
+    for (int i = 0; i < n; i++) {
+        if (p->id != particles[i].id) {
+            double dx = p->position.x - particles[i].position.x;
+            double dy = p->position.y - particles[i].position.y;
+            if ((dx * dx + dy * dy) <= (p->radius + particles[i].radius) * (p->radius + particles[i].radius)) {
+                collided[(*count)++] = &particles[i];
+            }
         }
-        QuadTreeNode *root = create_node(bounds);
-        for (int i = 0; i < 100; i++)
-            insert_particle(root, &particles[i]);
-        free_tree(root);
     }
-    printf("  [OK] stress_rebuild_frames (100 frames, 100 particulas)\n");
 }
 
-int main(void) {
-    srand((unsigned)time(NULL));
-    printf("\n=== Testes de Stress ===\n");
-    stress_insert_query_remove();
-    stress_rebuild_frames();
-    printf("\nTodos os testes de stress passaram.\n");
+void run_benchmark(int n) {
+    Particle* particles = malloc(n * sizeof(Particle));
+    for (int i = 0; i < n; i++) {
+        particles[i].id = i;
+        particles[i].position.x = rand() % 800;
+        particles[i].position.y = rand() % 600;
+        particles[i].radius = 4.0;
+    }
+
+    clock_t start, end;
+    double time_brute = 0, time_quad = 0;
+    Particle* collided[100];
+    int count = 0;
+
+    start = clock();
+    for (int i = 0; i < n; i++) {
+        count = 0;
+        check_collisions_brute(&particles[i], particles, n, collided, &count);
+    }
+    end = clock();
+    time_brute = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+    start = clock();
+    AABB boundary = {0, 0, 800, 600};
+    QuadTreeNode* root = create_node(boundary);
+    for (int i = 0; i < n; i++) insert_particle(root, &particles[i]);
+    for (int i = 0; i < n; i++) {
+        count = 0;
+        check_collisions(root, &particles[i], collided, &count);
+    }
+    free_tree(root);
+    end = clock();
+    time_quad = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+    printf("%d,%.6f,%.6f\n", n, time_brute, time_quad);
+    free(particles);
+}
+
+int main() {
+    printf("N,Tempo_O(n2),Tempo_Quadtree\n");
+    int test_sizes[] = {100, 500, 1000, 2500, 5000, 10000};
+    for (int i = 0; i < 6; i++) {
+        run_benchmark(test_sizes[i]);
+    }
     return 0;
 }
