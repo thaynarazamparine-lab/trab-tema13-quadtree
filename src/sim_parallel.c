@@ -248,7 +248,7 @@ static void run_full(Particle *particles, double *vx, double *vy,
 
     char cmd[256];
     snprintf(cmd, sizeof(cmd), "mkdir -p %s results/graphs results/logs", csv_dir);
-    (void)system(cmd);
+    if (system(cmd) == -1) {}
 
     CsvHandles csv = metrics_open_csv(csv_dir);
 
