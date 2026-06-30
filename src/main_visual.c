@@ -2,9 +2,8 @@
 #include "../include/quadtree.h"
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
 #define NUM_PARTICLES 60
 
 void DrawHeart(int x, int y, float size, Color color) {
@@ -28,7 +27,6 @@ void draw_quadtree_bounds(QuadTreeNode* node, bool* is_colliding) {
     }
 
     if (has_collision) {
-        // Fundo branco com apenas 5% de opacidade e borda levemente mais visível
         DrawRectangle((int)node->bounds.x, (int)node->bounds.y, 
                       (int)node->bounds.width, (int)node->bounds.height, Fade(WHITE, 0.05f));
         DrawRectangleLines((int)node->bounds.x, (int)node->bounds.y, 
@@ -48,7 +46,8 @@ void draw_quadtree_bounds(QuadTreeNode* node, bool* is_colliding) {
 
 int main() {
     srand(time(NULL));
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Simulador de Colisoes - Quadtree");
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(800, 600, "Simulador de Colisoes - Quadtree");
     SetTargetFPS(60);
 
     Particle particles[NUM_PARTICLES];
@@ -57,25 +56,39 @@ int main() {
 
     for (int i = 0; i < NUM_PARTICLES; i++) {
         particles[i].id = i;
-        particles[i].position.x = (double)(rand() % (SCREEN_WIDTH - 40) + 20);
-        particles[i].position.y = (double)(rand() % (SCREEN_HEIGHT - 40) + 20);
+        particles[i].position.x = (double)(rand() % (800 - 40) + 20);
+        particles[i].position.y = (double)(rand() % (600 - 40) + 20);
         particles[i].radius = 6.0; 
-        vx[i] = (double)((rand() % 200 - 100) / 50.0);
-        vy[i] = (double)((rand() % 200 - 100) / 50.0);
+        vx[i] = (double)((rand() % 200 - 100) / 30.0);
+        vy[i] = (double)((rand() % 200 - 100) / 30.0);
     }
 
     while (!WindowShouldClose()) {
+        int current_width = GetScreenWidth();
+        int current_height = GetScreenHeight();
+
         for (int i = 0; i < NUM_PARTICLES; i++) {
             particles[i].position.x += vx[i];
             particles[i].position.y += vy[i];
 
-            if (particles[i].position.x - particles[i].radius <= 0 || 
-                particles[i].position.x + particles[i].radius >= SCREEN_WIDTH) vx[i] *= -1;
-            if (particles[i].position.y - particles[i].radius <= 0 || 
-                particles[i].position.y + particles[i].radius >= SCREEN_HEIGHT) vy[i] *= -1;
+            if (particles[i].position.x - particles[i].radius <= 0) {
+                particles[i].position.x = particles[i].radius;
+                vx[i] = fabs(vx[i]);
+            } else if (particles[i].position.x + particles[i].radius >= current_width) {
+                particles[i].position.x = current_width - particles[i].radius;
+                vx[i] = -fabs(vx[i]);
+            }
+
+            if (particles[i].position.y - particles[i].radius <= 0) {
+                particles[i].position.y = particles[i].radius;
+                vy[i] = fabs(vy[i]);
+            } else if (particles[i].position.y + particles[i].radius >= current_height) {
+                particles[i].position.y = current_height - particles[i].radius;
+                vy[i] = -fabs(vy[i]);
+            }
         }
 
-        AABB boundary = {0.0, 0.0, (double)SCREEN_WIDTH, (double)SCREEN_HEIGHT};
+        AABB boundary = {0.0, 0.0, (double)current_width, (double)current_height};
         QuadTreeNode* root = create_node(boundary);
         
         for (int i = 0; i < NUM_PARTICLES; i++) insert_particle(root, &particles[i]);
