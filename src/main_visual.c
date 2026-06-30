@@ -117,5 +117,6 @@ int main() {
         free_tree(root);
     }
     CloseWindow();
+ 
     return 0;
 }
